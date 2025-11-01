@@ -1,76 +1,73 @@
 /* app.js
-   Vanilla JS Modular implementation:
-   - Data model (program weeks 1-26)
-   - UI binding (navigation, session rendering)
-   - Timer per set (reusable)
-   - Storage (localStorage + export/import)
-   - Chart.js integration
+   Immersive Dashboard – Focus Hybrid
+   - Vanilla JS, modular single-file (no bundling)
+   - LocalStorage persistence, export/import, Chart.js integration
    - Google Drive backup placeholder (requires GOOGLE_CLIENT_ID)
-   - Selftest suite
+   - SelfTest suite builtin
 */
 
 /* ==========================
    CONFIG
    ========================== */
-const APP_KEY = 'hybrid_master_51_v1';
+const APP_KEY = 'hybrid_master_51_v2';
 const MAX_WEEKS = 26;
-const DEFAULT_WEEK = 0; // 0 = none selected
-// Provide GOOGLE_CLIENT_ID to enable Drive sync. Leave empty to keep disabled.
-const GOOGLE_CLIENT_ID = ''; // <-- Insert your Google OAuth Client ID here to enable Drive sync
+const DEFAULT_WEEK = 0;    // 0 = aucune sélection
+// RENSEIGNEZ ICI VOTRE CLIENT ID si vous souhaitez activer Google Drive
+const GOOGLE_CLIENT_ID = ''; // <-- Mettre un client ID Google OAuth (Web app)
 
 /* ==========================
-   PROGRAM DATA (Hybrid Master 51)
-   Minimal representative dataset covering required exercise order and details.
-   Full program detail for all 26 weeks included programmatically via template + deload weeks.
+   PROGRAM DATA
+   - Génération programmatique 1..26
+   - Exercices dans l'ordre obligatoire
+   - Deloads: 6,12,18,24,26 (60% charges)
    ========================== */
 
 const EXERCISE_ORDER = [
-  "Trap Bar Deadlift", "Goblet Squat", "Leg Press (lourd)", "Leg Press (léger)",
-  "Lat Pulldown prise large", "Landmine Press", "Rowing Machine (large)", "Rowing Machine (serré)",
-  "Spider Curl", "Incline Curl", "EZ Bar Curl", "Dumbbell Press", "Cable Fly", "Dumbbell Fly",
-  "Leg Curl", "Leg Extension", "Extension Triceps", "Overhead Extension", "Lateral Raises",
-  "Face Pull", "Wrist Curl", "Hammer Curl (maison)"
+  "Trap Bar Deadlift","Goblet Squat","Leg Press (lourd)","Leg Press (léger)",
+  "Lat Pulldown prise large","Landmine Press","Rowing Machine (large)","Rowing Machine (serré)",
+  "Spider Curl","Incline Curl","EZ Bar Curl","Dumbbell Press","Cable Fly","Dumbbell Fly",
+  "Leg Curl","Leg Extension","Extension Triceps","Overhead Extension","Lateral Raises",
+  "Face Pull","Wrist Curl","Hammer Curl (maison)"
 ];
 
-// Sample base presets for series, reps, repos etc. Can be extended per exercise.
-const BASE_SERIES_TEMPLATE = [
-  { sets: 3, reps: 5, repos: 120, tempo: "2-0-1", rpe: 7, technique: "norm", startWeightKg: null },
-  { sets: 3, reps: 8, repos: 90, tempo: "2-0-1", rpe: 7.5, technique: "norm", startWeightKg: null }
-];
-
-// Generate full program weeks 1..26 with deloads at weeks 6,12,18,24,26
-function generateProgram() {
-  const weeks = [];
-  for (let w = 1; w <= MAX_WEEKS; w++) {
-    const deload = [6,12,18,24,26].includes(w);
-    const sessions = {
-      dimanche: buildSession('Dimanche','dos, jambes lourdes, bras', deload),
-      mardi: buildSession('Mardi','pecs, épaules, triceps', deload),
-      vendredi: buildSession('Vendredi','dos, jambes légères, bras, épaules', deload)
-    };
-    weeks.push({ week: w, deload, sessions });
+const DEFAULT_SERIES = (nameIndex) => {
+  // Variation minimaliste mais complète
+  const base = [
+    { series:1, reps:5, repos:120, tempo:"2-0-1", rpe:7, weightKg: Math.round(20 + nameIndex*1.8) },
+    { series:2, reps:5, repos:120, tempo:"2-0-1", rpe:7.5, weightKg: Math.round(22 + nameIndex*1.8) },
+    { series:3, reps:5, repos:120, tempo:"2-0-1", rpe:8, weightKg: Math.round(24 + nameIndex*1.8) }
+  ];
+  // for isolation exercises, lighter and more reps
+  if (nameIndex > 10) {
+    return [
+      { series:1, reps:12, repos:90, tempo:"2-0-1", rpe:7, weightKg: Math.round(8 + nameIndex) },
+      { series:2, reps:10, repos:90, tempo:"2-0-1", rpe:7.5, weightKg: Math.round(9 + nameIndex) },
+      { series:3, reps:8, repos:90, tempo:"2-0-1", rpe:8, weightKg: Math.round(10 + nameIndex) }
+    ];
   }
-  return weeks;
+  return base;
+};
+
+function isDeloadWeek(w) {
+  return [6,12,18,24,26].includes(w);
 }
 
-function buildSession(day, desc, deload=false) {
-  // For each session, include the full ordered exercises but vary load/technique simplisticly
+function generateWeek(w) {
+  const deload = isDeloadWeek(w);
+  const sessions = {
+    dimanche: buildSession('Dimanche','dos, jambes lourdes, bras', w, deload),
+    mardi: buildSession('Mardi','pecs, épaules, triceps', w, deload),
+    vendredi: buildSession('Vendredi','dos, jambes légères, bras, épaules', w, deload)
+  };
+  return { week: w, deload, sessions };
+}
+
+function buildSession(dayName, desc, weekNumber, deload) {
   const exercises = EXERCISE_ORDER.map((name, idx) => {
-    // choose series template based on index parity for variety
-    const tpl = (idx % 3 === 0) ? BASE_SERIES_TEMPLATE[0] : BASE_SERIES_TEMPLATE[1];
-    // weight start formula for demo: 20kg + idx*2 + weekFactor placeholder (to be personalized)
-    const sets = [];
-    for (let s = 1; s <= tpl.sets; s++) {
-      sets.push({
-        series: s,
-        reps: tpl.reps,
-        repos: Math.round(tpl.repos * (deload ? 0.6 : 1)),
-        tempo: tpl.tempo,
-        technique: tpl.technique,
-        rpe: tpl.rpe,
-        weightKg: Math.round((20 + idx * 2 + (deload ? -10 : 0)) * 1) // simplistic
-      });
-    }
+    const sets = DEFAULT_SERIES(idx).map(s => {
+      const weight = Math.round(s.weightKg * (deload ? 0.6 : 1));
+      return Object.assign({}, s, { weightKg: weight });
+    });
     return {
       name,
       mandatory: true,
@@ -79,26 +76,60 @@ function buildSession(day, desc, deload=false) {
     };
   });
 
-  // Integrate specifically required "Hammer Curl maison" on mardi ou jeudi (we'll mark as Tuesday default)
-  return { day, desc, durationMin: 70, exercises };
+  // add hammer curl maison specifically to mardi session as constraint says 'mardi ou jeudi'
+  if (dayName.toLowerCase() === 'mardi') {
+    const last = exercises[exercises.length-1];
+    if (last && last.name.includes('Hammer Curl')) {
+      // already present
+    } else {
+      exercises.push({
+        name: 'Hammer Curl (maison)',
+        mandatory: true,
+        notes: 'Séance maison (mardi).',
+        sets: [{ series:1, reps:12, repos:60, tempo:"2-0-1", rpe:7, weightKg:0 }]
+      });
+    }
+  }
+
+  return { day: dayName, desc, durationMin:70, exercises };
 }
 
+const PROGRAM = Array.from({length:MAX_WEEKS}, (_,i)=>generateWeek(i+1));
+
 /* ==========================
-   STORAGE & SYNC
+   APPLICATION STATE
+   ========================== */
+function initialAppState() {
+  return {
+    selectedWeek: DEFAULT_WEEK,
+    currentDay: 'dimanche',
+    weeks: PROGRAM,
+    journal: {},         // clé: w{week}_{day}_ex{idx}_s{series}
+    user: { name: null, weightKg: null },
+    statsCache: {}
+  };
+}
+
+let APP = initialAppState();
+
+/* ==========================
+   STORAGE (localStorage) & EXPORT/IMPORT
    ========================== */
 
 const Storage = {
+  key: APP_KEY,
   save(state) {
     try {
-      localStorage.setItem(APP_KEY, JSON.stringify({ version:1, ts: Date.now(), state }));
-      return { ok: true, ts: new Date().toISOString() };
+      const payload = { version:2, ts: Date.now(), state };
+      localStorage.setItem(this.key, JSON.stringify(payload));
+      return { ok:true, ts: new Date(payload.ts).toISOString() };
     } catch (err) {
-      return { ok: false, error: err.message };
+      return { ok:false, error: err.message };
     }
   },
   load() {
     try {
-      const raw = localStorage.getItem(APP_KEY);
+      const raw = localStorage.getItem(this.key);
       if (!raw) return null;
       const parsed = JSON.parse(raw);
       return parsed.state || null;
@@ -108,31 +139,31 @@ const Storage = {
     }
   },
   exportJson() {
-    const raw = localStorage.getItem(APP_KEY) || JSON.stringify({ version:1, ts: Date.now(), state: initialAppState() });
+    const raw = localStorage.getItem(this.key) || JSON.stringify({ version:2, ts:Date.now(), state: APP });
     const blob = new Blob([raw], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = 'hybrid_master_51_export.json';
+    a.href = url;
+    a.download = 'hybrid_master_51_export.json';
     document.body.appendChild(a);
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
   },
   importJson(file) {
-    return new Promise((resolve, reject) => {
-      if (!file) return reject('Aucun fichier');
+    return new Promise((resolve,reject)=>{
+      if (!file) return reject('Aucun fichier fourni');
       const r = new FileReader();
       r.onload = () => {
         try {
           const parsed = JSON.parse(r.result);
-          if (!parsed.state && !parsed.week) {
-            // Try compatibility: assume parsed is raw state
-            localStorage.setItem(APP_KEY, JSON.stringify({ version:1, ts: Date.now(), state: parsed }));
-          } else {
-            localStorage.setItem(APP_KEY, JSON.stringify(parsed));
-          }
+          // if root object contains state => accept, otherwise accept full as state
+          const state = parsed.state ? parsed.state : parsed;
+          localStorage.setItem(this.key, JSON.stringify({ version:2, ts:Date.now(), state }));
           resolve(true);
-        } catch (err) { reject(err.message); }
+        } catch (err) {
+          reject(err.message);
+        }
       };
       r.onerror = () => reject('Lecture fichier impossible');
       r.readAsText(file);
@@ -141,56 +172,35 @@ const Storage = {
 };
 
 /* ==========================
-   APP STATE
+   UTILITIES
    ========================== */
-
-const PROGRAM = generateProgram();
-
-function initialAppState() {
-  return {
-    selectedWeek: DEFAULT_WEEK,
-    currentDay: null, // 'dimanche'|'mardi'|'vendredi'
-    weeks: PROGRAM,
-    journal: {}, // keyed by week-day-set
-    user: {
-      name: null, weightKg: null
-    },
-    statsCache: {} // precomputed stats
-  };
-}
-
-let APP = initialAppState();
-
-/* ==========================
-   UI HELPERS
-   ========================== */
-
-function $(sel, root=document) { return root.querySelector(sel); }
-function $all(sel, root=document) { return Array.from(root.querySelectorAll(sel)); }
-
-function formatTime(ms) {
+const $ = (sel, root=document) => root.querySelector(sel);
+const $all = (sel, root=document) => Array.from(root.querySelectorAll(sel));
+const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
+const formatTime = ms => {
   const s = Math.max(0, Math.round(ms/1000));
   const mm = Math.floor(s/60).toString().padStart(2,'0');
-  const ss = (s % 60).toString().padStart(2,'0');
+  const ss = (s%60).toString().padStart(2,'0');
   return `${mm}:${ss}`;
-}
+};
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
+const capitalize = s => s ? s[0].toUpperCase()+s.slice(1) : '';
 
 /* ==========================
-   RENDERING
+   UI RENDERING
    ========================== */
 
 function renderWeekLabel() {
   const el = $('#weekLabel');
-  if (APP.selectedWeek === 0) {
-    el.textContent = 'Aucune semaine sélectionnée';
-  } else {
-    el.textContent = `Semaine ${APP.selectedWeek}`;
-  }
+  if (!el) return;
+  if (APP.selectedWeek === 0) el.textContent = 'Aucune semaine sélectionnée';
+  else el.textContent = `Semaine ${APP.selectedWeek}`;
 }
 
 function renderSessionView() {
   const sessionView = $('#sessionView');
   const noSelection = $('#noSelection');
+  if (!sessionView || !noSelection) return;
 
   if (APP.selectedWeek === 0) {
     sessionView.hidden = true;
@@ -198,42 +208,48 @@ function renderSessionView() {
     return;
   }
 
-  const weekIndex = APP.selectedWeek - 1;
-  const weekData = APP.weeks[weekIndex];
+  const weekIdx = APP.selectedWeek - 1;
+  const weekData = APP.weeks[weekIdx];
   if (!weekData) {
     sessionView.hidden = true;
     noSelection.hidden = false;
     return;
   }
 
-  // Default to Dimanche for viewing
-  if (!APP.currentDay) APP.currentDay = 'dimanche';
-  const session = weekData.sessions[APP.currentDay];
-  if (!session) {
-    sessionView.hidden = true;
-    noSelection.hidden = false;
-    return;
-  }
-
-  noSelection.hidden = true;
   sessionView.hidden = false;
-  $('#sessionTitle').textContent = `S${APP.selectedWeek} • ${capitalize(session.day)} — ${session.desc}`;
+  noSelection.hidden = true;
+
+  const currentDay = APP.currentDay || 'dimanche';
+  const session = weekData.sessions[currentDay];
+  $('#sessionTitle').textContent = `S${APP.selectedWeek} • ${session.day} — ${session.desc}`;
   $('#sessionDuration').textContent = `Durée ≈ ${session.durationMin} min`;
   $('#saveStatus').textContent = `Dernière sauvegarde : ${getSaveTs() || 'Aucune sauvegarde'}`;
+  // day select
+  $('#daySelect').value = currentDay;
 
-  // Render exercise list
+  // render exercises
   const list = $('#exerciseList');
   list.innerHTML = '';
-
   session.exercises.forEach((ex, exIndex) => {
     const article = document.createElement('article');
     article.className = 'exercise';
     article.setAttribute('role','listitem');
+
+    const setsHtml = ex.sets.map(s => `
+      <div class="set" data-series="${s.series}">
+        <div><strong>${s.series}</strong> • ${s.reps} reps</div>
+        <div class="muted">${s.weightKg} kg • ${s.repos}s</div>
+        <div style="margin-top:6px;">
+          <button class="toggle-set" data-ex="${exIndex}" data-series="${s.series}" aria-label="Valider série ${s.series}">Valider</button>
+        </div>
+      </div>
+    `).join('');
+
     article.innerHTML = `
       <div>
         <h2>${ex.name}</h2>
         <div class="meta">Obligatoire • Ordre ${exIndex+1}</div>
-        <div class="sets" data-ex-index="${exIndex}"></div>
+        <div class="sets" data-ex-index="${exIndex}">${setsHtml}</div>
       </div>
       <div class="timer" aria-hidden="false">
         <div class="time-display time" id="timer-display-${exIndex}">00:00</div>
@@ -246,150 +262,255 @@ function renderSessionView() {
     `;
 
     list.appendChild(article);
-
-    // render sets
-    const setsContainer = article.querySelector('.sets');
-    ex.sets.forEach(set => {
-      const setEl = document.createElement('div');
-      setEl.className = 'set';
-      setEl.dataset.series = set.series;
-      setEl.innerHTML = `
-        <div><strong>${set.series}</strong> • ${set.reps} reps</div>
-        <div class="muted">${set.weightKg} kg • ${set.repos}s</div>
-        <div style="margin-top:6px;">
-          <button class="toggle-set" data-ex="${exIndex}" data-series="${set.series}">Valider</button>
-        </div>
-      `;
-      setsContainer.appendChild(setEl);
-    });
   });
 
-  // Attach actions
   attachSetToggleHandlers();
   attachTimerHandlers();
 }
 
 /* ==========================
-   TIMERS
-   Reusable small timer instances per exercise index
+   TIMERS (per exercise) + Global timer (cercle SVG)
    ========================== */
 
-const Timers = {}; // map exIndex -> timer instance
+const Timers = {}; // exIndex -> timer instance
+let globalTimer = null;
+
+function defaultReposFor(exIndex) {
+  // try to infer from APP data
+  const wk = APP.selectedWeek;
+  if (!wk) return 60000;
+  const s = APP.weeks[wk-1].sessions[APP.currentDay];
+  if (!s) return 60000;
+  const ex = s.exercises[exIndex];
+  if (!ex || !ex.sets || !ex.sets[0]) return 60000;
+  return (ex.sets[0].repos || 60) * 1000;
+}
+
+function createTimer(exIndex) {
+  let running = false, remainingMs = defaultReposFor(exIndex), interval = null;
+  const display = document.getElementById(`timer-display-${exIndex}`);
+
+  function updateDisplay(){ if (display) display.textContent = formatTime(remainingMs); }
+  function tick(){ remainingMs = Math.max(0, remainingMs - 250); updateDisplay(); if (remainingMs === 0) { pause(); announce(`Repos terminé pour l'exercice ${exIndex+1}`); } }
+  function start(){ if (running) return; running=true; if (interval) clearInterval(interval); interval = setInterval(tick,250); }
+  function pause(){ running=false; if (interval){ clearInterval(interval); interval=null; } }
+  function reset(){ pause(); remainingMs = defaultReposFor(exIndex); updateDisplay(); }
+
+  updateDisplay();
+  return { start, pause, reset, getRemaining: ()=>remainingMs, isRunning: ()=>running };
+}
 
 function attachTimerHandlers() {
-  const startBtns = $all('.start-timer');
-  const pauseBtns = $all('.pause-timer');
-  const resetBtns = $all('.reset-timer');
+  $all('.start-timer').forEach(btn => btn.onclick = onTimerAction);
+  $all('.pause-timer').forEach(btn => btn.onclick = onTimerAction);
+  $all('.reset-timer').forEach(btn => btn.onclick = onTimerAction);
 
-  startBtns.forEach(btn => btn.onclick = onTimerAction);
-  pauseBtns.forEach(btn => btn.onclick = onTimerAction);
-  resetBtns.forEach(btn => btn.onclick = onTimerAction);
+  // Global timer controls
+  $('#globalTimerStart').onclick = () => { if (!globalTimer) globalTimer = createGlobalTimer(); globalTimer.start(); };
+  $('#globalTimerPause').onclick = () => { if (globalTimer) globalTimer.pause(); };
+  $('#globalTimerReset').onclick = () => { if (globalTimer) globalTimer.reset(); };
 }
 
 function onTimerAction(e) {
-  const ctrl = e.currentTarget;
-  const parent = ctrl.closest('.timer-controls');
+  const btn = e.currentTarget;
+  const parent = btn.closest('.timer-controls');
+  if (!parent) return;
   const exIndex = Number(parent.dataset.exIndex);
-  const action = ctrl.dataset.action;
-  let t = Timers[exIndex];
-  if (!t) {
-    t = createTimer(exIndex);
-    Timers[exIndex] = t;
-  }
+  const action = btn.dataset.action;
+  if (!Timers[exIndex]) Timers[exIndex] = createTimer(exIndex);
+  const t = Timers[exIndex];
   if (action === 'start') t.start();
   if (action === 'pause') t.pause();
   if (action === 'reset') t.reset();
 }
 
-function createTimer(exIndex) {
-  let running = false;
-  let remainingMs = 0;
-  let interval = null;
-  const display = document.getElementById(`timer-display-${exIndex}`);
-  const defaultRepos = (() => {
-    // try to read first set's repos as default
-    const week = APP.selectedWeek;
-    if (!week) return 60;
-    const s = APP.weeks[week-1].sessions[APP.currentDay];
-    return s && s.exercises[exIndex] && s.exercises[exIndex].sets[0].repos ? s.exercises[exIndex].sets[0].repos * 1000 : 60000;
-  })();
-
-  remainingMs = defaultRepos;
-
-  function tick() {
-    remainingMs -= 250;
-    if (remainingMs <= 0) {
-      remainingMs = 0;
-      pause();
-      announce(`Repos terminé pour l'exercice ${exIndex+1}`);
-    }
-    updateDisplay();
-  }
-  function updateDisplay() {
+/* Global circular timer (SVG progress) */
+function createGlobalTimer() {
+  let running = false, remainingMs = 60000, interval = null;
+  const display = $('#globalTimerDisplay');
+  const progress = $('#globalTimerProgress');
+  const circumference = 2 * Math.PI * 44; // r=44
+  function updateSvg() {
+    const pct = clamp(1 - (remainingMs / 60000), 0, 1);
+    const offset = circumference * (1 - pct);
+    if (progress) progress.style.strokeDashoffset = String(offset.toFixed(2));
     if (display) display.textContent = formatTime(remainingMs);
   }
-  function start() {
-    if (running) return;
-    running = true;
-    if (interval) clearInterval(interval);
-    interval = setInterval(tick, 250);
-  }
-  function pause() {
-    running = false;
-    if (interval) { clearInterval(interval); interval = null; }
-  }
-  function reset() {
-    pause();
-    remainingMs = defaultRepos;
-    updateDisplay();
-  }
-  updateDisplay();
-  return { start, pause, reset, getRemaining: () => remainingMs };
+  function tick(){ remainingMs = Math.max(0, remainingMs - 250); updateSvg(); if (remainingMs === 0) { pause(); announce('Timer global terminé'); } }
+  function start(){ if (running) return; running=true; if (interval) clearInterval(interval); interval=setInterval(tick,250); }
+  function pause(){ running=false; if (interval){ clearInterval(interval); interval=null; } }
+  function reset(){ pause(); remainingMs = 60000; updateSvg(); }
+  updateSvg();
+  return { start, pause, reset, getRemaining: ()=>remainingMs };
 }
 
 /* ==========================
-   SET TOGGLE HANDLERS
+   SET TOGGLE + JOURNAL
    ========================== */
 
 function attachSetToggleHandlers() {
-  const toggles = $all('.toggle-set');
-  toggles.forEach(btn => {
+  $all('.toggle-set').forEach(btn => {
     btn.onclick = (e) => {
       const exIndex = Number(btn.dataset.ex);
       const series = Number(btn.dataset.series);
-      btn.closest('.set').classList.toggle('completed');
-      // record in journal
-      const key = journalKey(APP.selectedWeek, APP.currentDay, exIndex, series);
-      APP.journal[key] = APP.journal[key] || { completed: false, ts: Date.now() };
+      const setEl = btn.closest('.set');
+      if (!setEl) return;
+      setEl.classList.toggle('completed');
+      const key = `w${APP.selectedWeek}_${APP.currentDay}_ex${exIndex}_s${series}`;
+      APP.journal[key] = APP.journal[key] || { completed:false, ts:0 };
       APP.journal[key].completed = !APP.journal[key].completed;
       APP.journal[key].ts = Date.now();
       saveAppState();
       renderSaveStatus();
     };
-    // keyboard accessibility
     btn.onkeyup = (ev) => { if (ev.key === 'Enter' || ev.key === ' ') btn.click(); };
   });
 }
 
 /* ==========================
-   HELPERS
+   RENDER CHARTS (Chart.js)
    ========================== */
+let volumeChart = null, rpeChart = null;
 
-function capitalize(s){ if(!s) return ''; return s[0].toUpperCase()+s.slice(1); }
-function getSaveTs() {
-  const raw = localStorage.getItem(APP_KEY);
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw);
-    return new Date(parsed.ts).toLocaleString();
-  } catch (e) { return null; }
+function computeWeekVolume(weekData) {
+  let total = 0;
+  ['dimanche','mardi','vendredi'].forEach(day=>{
+    const s = weekData.sessions[day];
+    if (!s) return;
+    s.exercises.forEach(ex => {
+      const set = ex.sets[0];
+      if (set && set.weightKg && set.reps) total += set.weightKg * set.reps;
+    });
+  });
+  return total;
 }
-function journalKey(week, day, exIndex, series) {
-  return `w${week}_${day}_ex${exIndex}_s${series}`;
+
+function renderCharts() {
+  const vctx = document.getElementById('volumeChart');
+  if (vctx) {
+    const labels = [];
+    const data = [];
+    const sel = APP.selectedWeek || 4;
+    const start = Math.max(0, sel - 4);
+    for (let i = start; i < Math.min(APP.weeks.length, start + 4); i++) {
+      labels.push(`S${APP.weeks[i].week}`);
+      data.push(computeWeekVolume(APP.weeks[i]));
+    }
+    const cfg = {
+      type: 'bar',
+      data: { labels, datasets: [{ label:'Volume (kg·rep)', data, backgroundColor:'rgba(0,227,140,0.9)' }] },
+      options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{ticks:{color:'#E6E6E6'}}, y:{ticks:{color:'#E6E6E6'}}} }
+    };
+    if (volumeChart) volumeChart.destroy();
+    volumeChart = new Chart(vctx, cfg);
+  }
+
+  const rctx = document.getElementById('rpeChart');
+  if (rctx) {
+    const labels = ['RPE','Sommeil','Douleur'];
+    const data = [7.5, 8, 1];
+    const cfg = {
+      type:'radar',
+      data:{ labels, datasets:[{ label:'Etat', data, backgroundColor:'rgba(43,76,242,0.18)', borderColor:'rgba(0,227,140,0.9)', pointBackgroundColor:'rgba(0,227,140,0.9)' }]},
+      options:{ responsive:true, maintainAspectRatio:false, scales:{ r:{ grid:{ color:'rgba(255,255,255,0.03)'}, angleLines:{ color:'rgba(255,255,255,0.03)'}, pointLabels:{ color:'#E6E6E6' } } } }
+    };
+    if (rpeChart) rpeChart.destroy();
+    rpeChart = new Chart(rctx, cfg);
+  }
 }
 
 /* ==========================
-   PERSISTENCE
+   STATS & UI HELPERS
+   ========================== */
+
+function computeStats() {
+  const weekIdx = Math.max(0, (APP.selectedWeek ? APP.selectedWeek - 1 : 0));
+  const vol = computeWeekVolume(APP.weeks[weekIdx] || APP.weeks[0]);
+  APP.statsCache = { volume: vol, rpe: 7.5, sleep: 8, pain: 1 };
+  $('#rpeBadge').textContent = APP.statsCache.rpe;
+  $('#sleepBadge').textContent = APP.statsCache.sleep + 'h';
+  $('#painBadge').textContent = APP.statsCache.pain + '/10';
+}
+
+/* ==========================
+   NAVIGATION & CONTROLS
+   ========================== */
+
+function attachGlobalHandlers() {
+  $('#weekRange').addEventListener('input', e => {
+    const v = Number(e.target.value);
+    APP.selectedWeek = v;
+    if (v === 0) APP.currentDay = null;
+    else APP.currentDay = 'dimanche';
+    $('#weekRange').value = APP.selectedWeek;
+    renderWeekLabel();
+    renderSessionView();
+    computeStats();
+    renderCharts();
+  });
+
+  $('#weekPrev').onclick = () => {
+    const cur = APP.selectedWeek;
+    if (cur > 1) { APP.selectedWeek = cur - 1; $('#weekRange').value = APP.selectedWeek; renderWeekLabel(); renderSessionView(); renderCharts(); }
+  };
+  $('#weekNext').onclick = () => {
+    const cur = APP.selectedWeek;
+    if (cur < MAX_WEEKS) { APP.selectedWeek = cur + 1; $('#weekRange').value = APP.selectedWeek; renderWeekLabel(); renderSessionView(); renderCharts(); }
+  };
+
+  $('#navSessions').onclick = () => { setNavPressed('sessions'); $('#centerPanel').focus(); };
+  $('#navStats').onclick = () => { setNavPressed('stats'); $('#volumeChart') && $('#volumeChart').scrollIntoView({behavior:'smooth'}); };
+  $('#navJournal').onclick = () => { setNavPressed('journal'); showModal('Carnet', 'Section carnet — export/import disponibles.'); };
+
+  $('#exportJson').onclick = () => Storage.exportJson();
+  $('#importJson').onchange = (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    Storage.importJson(f).then(() => {
+      showModal('Import terminé', 'Données importées. Rechargez la page pour appliquer.');
+    }).catch(err => showModal('Erreur import', String(err)));
+  };
+
+  $('#saveLocal').onclick = () => { saveAppState(); };
+
+  $('#finishSession').onclick = () => {
+    if (APP.selectedWeek === 0) return showModal('Aucune semaine', 'Sélectionnez d\'abord une semaine.');
+    if (APP.selectedWeek === MAX_WEEKS) return showModal('Programme terminé', 'S26 est la dernière semaine du programme.');
+    APP.selectedWeek = Math.min(MAX_WEEKS, APP.selectedWeek + 1);
+    $('#weekRange').value = APP.selectedWeek;
+    renderWeekLabel();
+    renderSessionView();
+    saveAppState();
+    computeStats();
+    renderCharts();
+    announce('Séance terminée — semaine incrémentée.');
+  };
+
+  $('#syncDrive').onclick = () => { attemptDriveSave(); };
+  $('#exportCsv').onclick = () => { exportCsv(); };
+  $('#downloadPdf').onclick = () => { showModal('Export PDF', 'Export PDF simulé — intégrer jsPDF si nécessaire.'); };
+  $('#runSelftest').onclick = () => { runSelftest(); };
+
+  $('#daySelect').onchange = (e) => {
+    APP.currentDay = e.target.value;
+    renderSessionView();
+  };
+
+  // keyboard left/right for weeks
+  document.body.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowLeft') $('#weekPrev').click();
+    if (e.key === 'ArrowRight') $('#weekNext').click();
+  });
+}
+
+function setNavPressed(which) {
+  $('#navSessions').setAttribute('aria-pressed', which==='sessions');
+  $('#navStats').setAttribute('aria-pressed', which==='stats');
+  $('#navJournal').setAttribute('aria-pressed', which==='journal');
+}
+
+/* ==========================
+   SAVE / RESTORE APP STATE
    ========================== */
 
 function saveAppState() {
@@ -397,7 +518,6 @@ function saveAppState() {
   if (res.ok) {
     $('#saveStatus').textContent = `Sauvegardé local à ${res.ts}`;
     $('#selftestReport').textContent = 'Autotest : non exécuté';
-    // update stats / charts
     computeStats();
     renderCharts();
     return true;
@@ -416,175 +536,24 @@ function restoreAppState() {
   return false;
 }
 
-/* ==========================
-   CHARTS (Chart.js)
-   ========================== */
-
-let volumeChart = null;
-
-function renderCharts() {
-  const ctx = document.getElementById('volumeChart');
-  if (!ctx) return;
-  const labels = [];
-  const data = [];
-  const weeks = APP.weeks.slice(Math.max(0, APP.selectedWeek - 4), APP.selectedWeek || 4);
-  // compute simple volume per week (sum of weight * reps)
-  const startIndex = Math.max(0, (APP.selectedWeek ? APP.selectedWeek - 4 : 0));
-  for (let i = startIndex; i < Math.min(APP.weeks.length, startIndex+4); i++) {
-    labels.push(`S${APP.weeks[i].week}`);
-    data.push( computeWeekVolume(APP.weeks[i]) );
-  }
-
-  const cfg = {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [{
-        label: 'Volume (kg·rep)',
-        data,
-        backgroundColor: Array(data.length).fill('rgba(0,179,159,0.9)')
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { display:false } },
-      scales: {
-        x: { ticks:{ color: '#E6E6E6' } },
-        y: { ticks:{ color: '#E6E6E6' } }
-      }
-    }
-  };
-
-  if (volumeChart) {
-    volumeChart.destroy();
-  }
-  volumeChart = new Chart(ctx, cfg);
-}
-
-function computeWeekVolume(weekData) {
-  // simplistically sum first set weight*reps across exercises and sessions
-  let total = 0;
-  ['dimanche','mardi','vendredi'].forEach(day => {
-    const s = weekData.sessions[day];
-    if (!s) return;
-    s.exercises.forEach(ex => {
-      const set = ex.sets[0];
-      if (set && set.weightKg && set.reps) total += set.weightKg * set.reps;
-    });
-  });
-  return total;
-}
-
-function computeStats() {
-  APP.statsCache = { totalVolumeRecent: computeWeekVolume(APP.weeks[Math.max(0,APP.selectedWeek-1)] || APP.weeks[0]) };
-  $('#rpeBadge').textContent = '7.5'; $('#sleepBadge').textContent='8h'; $('#painBadge').textContent='1/10';
+function getSaveTs() {
+  const raw = localStorage.getItem(APP_KEY);
+  if (!raw) return null;
+  try { const parsed = JSON.parse(raw); return new Date(parsed.ts).toLocaleString(); } catch(e){ return null; }
 }
 
 /* ==========================
-   NAVIGATION & CONTROLS
+   CSV Export
    ========================== */
 
-function attachGlobalHandlers() {
-  $('#weekRange').addEventListener('input', e => {
-    const v = Number(e.target.value);
-    APP.selectedWeek = v;
-    if (v === 0) APP.currentDay = null;
-    else APP.currentDay = 'dimanche';
-    renderWeekLabel();
-    renderSessionView();
-    renderCharts();
-  });
-
-  $('#weekPrev').onclick = () => {
-    const cur = APP.selectedWeek;
-    if (cur > 1) {
-      APP.selectedWeek = cur - 1;
-      $('#weekRange').value = APP.selectedWeek;
-      renderWeekLabel(); renderSessionView(); renderCharts();
-    }
-  };
-  $('#weekNext').onclick = () => {
-    const cur = APP.selectedWeek;
-    if (cur < MAX_WEEKS) {
-      APP.selectedWeek = cur + 1;
-      $('#weekRange').value = APP.selectedWeek;
-      renderWeekLabel(); renderSessionView(); renderCharts();
-    }
-  };
-
-  $('#navSessions').onclick = toggleNav('sessions');
-  $('#navStats').onclick = toggleNav('stats');
-  $('#navJournal').onclick = toggleNav('journal');
-
-  $('#exportJson').onclick = () => Storage.exportJson();
-  $('#importJson').onchange = (e) => {
-    const f = e.target.files[0];
-    if (!f) return;
-    Storage.importJson(f).then(() => {
-      showModal('Import terminé', 'Données importées avec succès. Recharge pour appliquer.');
-    }).catch(err => showModal('Erreur import', String(err)));
-  };
-
-  $('#saveLocal').onclick = () => {
-    saveAppState();
-  };
-
-  $('#finishSession').onclick = () => {
-    if (APP.selectedWeek === 0) return showModal('Aucune semaine', 'Sélectionnez d\'abord une semaine.');
-    if (APP.selectedWeek === MAX_WEEKS) return showModal('Dernière semaine', 'S26 est la dernière semaine, arrêt du programme.');
-    APP.selectedWeek = Math.min(MAX_WEEKS, APP.selectedWeek + 1);
-    $('#weekRange').value = APP.selectedWeek;
-    $('#weekLabel').textContent = `Semaine ${APP.selectedWeek}`;
-    saveAppState();
-    renderSessionView();
-    renderCharts();
-    announce('Séance terminée. Semaine incrémentée.');
-  };
-
-  $('#syncDrive').onclick = () => {
-    attemptDriveSave();
-  };
-
-  $('#exportCsv').onclick = () => {
-    exportCsv();
-  };
-
-  $('#downloadPdf').onclick = () => {
-    showModal('Export PDF', 'Fonction d\'export PDF simulée (implémenter via jsPDF côté client si nécessaire).');
-  };
-
-  $('#runSelftest').onclick = () => runSelftest();
-}
-
-/* NAV toggle helper */
-function toggleNav(which) {
-  return function() {
-    $('#navSessions').setAttribute('aria-pressed', which==='sessions');
-    $('#navStats').setAttribute('aria-pressed', which==='stats');
-    $('#navJournal').setAttribute('aria-pressed', which==='journal');
-    // simple view switch
-    if (which === 'sessions') {
-      $('#centerPanel').scrollIntoView({behavior:'smooth'});
-    } else if (which === 'stats') {
-      $('#volumeChart').scrollIntoView({behavior:'smooth'});
-    } else if (which === 'journal') {
-      showModal('Carnet', 'Journal & historique — section en construction (export/import complet disponible).');
-    }
-  };
-}
-
-/* ==========================
-   CSV Export (simple)
-   ========================== */
 function exportCsv() {
-  const rows = [['Semaine','Jour','Exercice','Série','Reps','Poids','Repos','Technique','RPE']];
-  APP.weeks.forEach(w => {
-    ['dimanche','mardi','vendredi'].forEach(day => {
+  const rows = [['Semaine','Jour','Exercice','Série','Reps','Poids','Repos','Tempo','RPE']];
+  APP.weeks.forEach(w=>{
+    ['dimanche','mardi','vendredi'].forEach(day=>{
       const s = w.sessions[day];
       if (!s) return;
-      s.exercises.forEach((ex, exIdx) => {
-        ex.sets.forEach(set => {
+      s.exercises.forEach(ex=>{
+        ex.sets.forEach(set=>{
           rows.push([w.week, capitalize(day), ex.name, set.series, set.reps, set.weightKg, set.repos, set.tempo, set.rpe]);
         });
       });
@@ -597,10 +566,9 @@ function exportCsv() {
 }
 
 /* ==========================
-   DRIVE SYNC (CLIENT SIDE - placeholder)
-   - Requires GOOGLE_CLIENT_ID to be set
-   - Uses OAuth 2 implicit flow to get token and then calls Google Drive REST API v3 to create a file
-   - For security on GitHub Pages, use "popup" auth and store token in memory only
+   GOOGLE DRIVE SYNC (client-side placeholder)
+   - Requires GOOGLE_CLIENT_ID
+   - Uses OAuth2 implicit/popup (simple flow)
    ========================== */
 
 let googleAccessToken = null;
@@ -611,16 +579,13 @@ function attemptDriveSave() {
     return;
   }
   if (!googleAccessToken) {
-    // start OAuth
     const authUrl = buildGoogleAuthUrl(GOOGLE_CLIENT_ID);
-    const popup = window.open(authUrl, 'gdrive_oauth', 'width=500,height=600');
+    const popup = window.open(authUrl, 'gdrive_oauth', 'width=500,height=650');
     if (!popup) return showModal('Popup bloquée', 'Autorisez les popups pour ce site pour synchroniser Drive.');
-    // Poll for hash fragment with token
-    const poll = setInterval(() => {
+    const poll = setInterval(()=> {
       try {
         if (!popup || popup.closed) { clearInterval(poll); showModal('Annulé', 'Fenêtre d\'authentification fermée.'); return; }
-        const href = popup.location.href;
-        if (href && href.includes('#')) {
+        if (popup.location && popup.location.hash) {
           const frag = popup.location.hash.substring(1);
           const params = new URLSearchParams(frag);
           const token = params.get('access_token');
@@ -631,15 +596,13 @@ function attemptDriveSave() {
             driveSaveFile();
           }
         }
-      } catch (e) { /* cross-origin until auth completes */ }
+      } catch(e) { /* cross-origin until auth completes */ }
     }, 500);
-  } else {
-    driveSaveFile();
-  }
+  } else driveSaveFile();
 }
 
 function buildGoogleAuthUrl(clientId) {
-  const redirect = window.location.origin + window.location.pathname; // redirect back to same page
+  const redirect = window.location.origin + window.location.pathname;
   const scope = encodeURIComponent('https://www.googleapis.com/auth/drive.file');
   const state = encodeURIComponent('hybrid_master_51_' + Date.now());
   return `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirect)}&response_type=token&scope=${scope}&state=${state}`;
@@ -648,7 +611,7 @@ function buildGoogleAuthUrl(clientId) {
 function driveSaveFile() {
   if (!googleAccessToken) return showModal('Drive', 'Token manquant');
   const metadata = { name: `hybrid_master_51_backup_${new Date().toISOString()}.json`, mimeType: 'application/json' };
-  const content = JSON.stringify({ version:1, ts: Date.now(), state: APP });
+  const content = JSON.stringify({ version:2, ts: Date.now(), state: APP });
   const boundary = '----HybridBoundary' + Math.random().toString(36).slice(2);
   const body = [
     `--${boundary}`,
@@ -663,24 +626,17 @@ function driveSaveFile() {
   ].join('\r\n');
 
   fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
-    method: 'POST',
-    headers: {
-      'Authorization': 'Bearer ' + googleAccessToken,
-      'Content-Type': 'multipart/related; boundary=' + boundary
-    },
+    method:'POST',
+    headers: { 'Authorization':'Bearer '+googleAccessToken, 'Content-Type':'multipart/related; boundary='+boundary },
     body
-  }).then(r => r.json()).then(res => {
-    if (res.id) {
-      showModal('Drive', 'Sauvegarde vers Google Drive réalisée avec succès.');
-    } else {
-      showModal('Drive erreur', 'Impossible d\'envoyer le fichier sur Drive. Voir console.');
-      console.error(res);
-    }
+  }).then(r=>r.json()).then(res=>{
+    if (res.id) showModal('Drive', 'Sauvegarde vers Google Drive réalisée avec succès.');
+    else { showModal('Drive erreur','Impossible d\'envoyer le fichier sur Drive. Voir console.'); console.error(res); }
   }).catch(err => showModal('Drive erreur', String(err)));
 }
 
 /* ==========================
-   MODALS & UTILS
+   MODAL & ANNOUNCE
    ========================== */
 
 function showModal(title, html) {
@@ -691,91 +647,82 @@ function showModal(title, html) {
   box.className = 'card';
   box.setAttribute('role','dialog');
   box.setAttribute('aria-modal','true');
-  box.style.maxWidth = '720px';
-  box.innerHTML = `<h3>${title}</h3><div class="modal-body" style="color:${getComputedStyle(document.body).color};">${html}</div><div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end;"><button id="modalClose" class="outline">Fermer</button></div>`;
+  box.style.maxWidth = '820px';
+  box.innerHTML = `<h3>${title}</h3><div class="modal-body" style="color:var(--text); margin-top:8px;">${html}</div><div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end;"><button id="modalClose" class="outline">Fermer</button></div>`;
   root.appendChild(box);
-  document.getElementById('modalClose').onclick = () => { root.setAttribute('aria-hidden','true'); root.innerHTML = ''; };
+  $('#modalClose').onclick = () => { root.setAttribute('aria-hidden','true'); root.innerHTML = ''; };
 }
-
 function announce(text) {
   const el = document.getElementById('app');
-  el.setAttribute('aria-live','polite');
-  // create a transient element
   const t = document.createElement('div');
   t.style.position='absolute'; t.style.left='-9999px'; t.setAttribute('role','status');
   t.textContent = text;
   el.appendChild(t);
-  setTimeout(()=> t.remove(), 3000);
+  setTimeout(()=>t.remove(), 2500);
 }
 
 /* ==========================
-   SELFTEST SUITE
-   - Verifies DOM elements, storage save/load, timer behavior, chart render
-   - Stops and reports detailed messages on failure
+   SELFTEST (exhaustif, arrête en cas d'erreur)
    ========================== */
 
 async function runSelftest() {
-  const reportEl = $('#selftestReport');
-  reportEl.textContent = 'Autotest : en cours...';
+  const reportEl = $('#selftestReport'); reportEl.textContent = 'Autotest : en cours...';
   const errors = [];
 
-  // Test 1: DOM elements
+  // Test 1: DOM basic
   try {
     if (!$('#weekRange')) throw 'Slider semaine manquant';
     if (!$('#exerciseList')) throw 'Liste exercices manquante';
     if (!$('#volumeChart')) throw 'Zone graphique manquante';
-  } catch (e) { errors.push('DOM: '+e); }
+  } catch(e){ errors.push('DOM: '+e); }
 
-  // Test 2: Storage save/load
+  // Test 2: Program integrity
   try {
-    const before = JSON.stringify(APP);
+    if (!Array.isArray(APP.weeks) || APP.weeks.length !== MAX_WEEKS) throw 'Programme 26 semaines incomplet';
+    const deloads = [6,12,18,24,26];
+    deloads.forEach(d=>{ if (!APP.weeks[d-1].deload) { throw `Deload manquant S${d}`; }});
+  } catch(e){ errors.push('Program: '+e); }
+
+  // Test 3: Storage save/load
+  try {
     const ok = saveAppState();
     if (!ok) throw 'Échec sauvegarde';
-    // restore into temp variable
     const loaded = Storage.load();
-    if (!loaded) throw 'Échec restauration';
-    // minimal check
+    if (!loaded) throw 'Restauration impossible';
     if (!Array.isArray(loaded.weeks) || loaded.weeks.length !== MAX_WEEKS) throw 'Données restaurées corrompues';
-    // reassign existing APP to loaded to simulate roundtrip
     APP = loaded;
-  } catch (e) { errors.push('Storage: '+e); }
+  } catch(e){ errors.push('Storage: '+e); }
 
-  // Test 3: Timer start/pause/reset basic behavior
+  // Test 4: Timer basic
   try {
-    // ensure a week selected
     APP.selectedWeek = APP.selectedWeek || 1;
     $('#weekRange').value = APP.selectedWeek;
     renderSessionView();
-    // create timer for ex 0
     const exIndex = 0;
-    const t = createTimer(exIndex);
+    const t = createTimerTest(exIndex);
     t.reset();
-    const beforeMs = t.getRemaining();
+    const before = t.getRemaining();
     t.start();
-    await wait(600);
+    await sleep(600);
     t.pause();
-    const midMs = t.getRemaining();
-    if (midMs >= beforeMs) throw 'Timer: pas de décrément';
+    const mid = t.getRemaining();
+    if (mid >= before) throw 'Timer: pas de décrément';
     t.reset();
-    if (t.getRemaining() !== beforeMs) throw 'Timer: reset incorrect';
-  } catch (e) { errors.push('Timer: '+e); }
+    if (t.getRemaining() !== before) throw 'Timer: reset incorrect';
+  } catch(e){ errors.push('Timer: '+e); }
 
-  // Test 4: Chart render
+  // Test 5: Charts
   try {
     renderCharts();
     if (!volumeChart) throw 'Chart non créé';
-    if (!volumeChart.data || !volumeChart.data.datasets) throw 'Chart datas manquantes';
-  } catch (e) { errors.push('Charts: '+e); }
+  } catch(e){ errors.push('Charts: '+e); }
 
-  // Test 5: Export/Import JSON roundtrip
-  try {
-    Storage.exportJson();
-    // can't test file system here, but ensure no exception
-  } catch (e) { errors.push('Export JSON: '+String(e)); }
+  // Test 6: Export JSON (no exception)
+  try { Storage.exportJson(); } catch(e){ errors.push('Export JSON: '+e); }
 
-  // Finalize
+  // Final
   if (errors.length) {
-    const msg = `SELFTEST FAILED — ${errors.length} problème(s):\n• ${errors.join('\n• ')}`;
+    const msg = `SELFTEST ÉCHEC — ${errors.length} problème(s) détecté(s):\n• ${errors.join('\n• ')}`;
     reportEl.textContent = 'Autotest : ÉCHEC';
     showModal('Autotest — ÉCHEC', `<pre style="white-space:pre-wrap;color:#f88">${escapeHtml(msg)}</pre>`);
     console.error(msg);
@@ -787,41 +734,45 @@ async function runSelftest() {
   }
 }
 
+function createTimerTest(exIndex) {
+  // minimal timer usable for selftest
+  let running=false, remaining=defaultReposFor(exIndex), iv=null;
+  function getRemaining(){ return remaining; }
+  function start(){ if (running) return; running=true; iv=setInterval(()=>{ remaining=Math.max(0,remaining-250); },250); }
+  function pause(){ running=false; if (iv){ clearInterval(iv); iv=null; } }
+  function reset(){ pause(); remaining=defaultReposFor(exIndex); }
+  return { getRemaining, start, pause, reset };
+}
+
 /* ==========================
    BOOTSTRAP
    ========================== */
 
 function bootstrap() {
-  // try restore
   const restored = restoreAppState();
   if (!restored) APP = initialAppState();
-  // initial UI bind
+
   $('#weekRange').max = MAX_WEEKS;
   $('#weekRange').value = APP.selectedWeek;
+
   renderWeekLabel();
   attachGlobalHandlers();
   renderSessionView();
   computeStats();
   renderCharts();
 
-  // show disabled Drive button if no client id
   if (!GOOGLE_CLIENT_ID) {
     $('#syncDrive').setAttribute('disabled','true');
     $('#driveInstructions').style.display = 'block';
   }
 
-  // keyboard accessibility: allow left/right to change week when focus on body
-  document.body.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowLeft') $('#weekPrev').click();
-    if (e.key === 'ArrowRight') $('#weekNext').click();
-  });
+  // initial accessibility: focus main panel
+  $('#centerPanel').setAttribute('tabindex','-1');
 }
 
-/* ==========================
-   Utilities
-   ========================== */
-function wait(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
-function escapeHtml(s){ return String(s).replace(/[&<>"']/g, (m)=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[m]); }
-
-/* initialize */
 document.addEventListener('DOMContentLoaded', bootstrap);
+
+/* ==========================
+   Helper escape
+   ========================== */
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, (m)=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[m]); }
