@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Hybrid Master 51 — Webapp</title>
+  <title>Hybrid Master 51 — Immersive Dashboard</title>
 
   <!-- Chart.js CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" defer></script>
@@ -11,20 +11,26 @@
   <!-- Styles -->
   <link rel="stylesheet" href="styles.css" />
 
-  <!-- Meta accessibility -->
   <meta name="color-scheme" content="dark" />
 </head>
 <body>
   <div id="app" class="app-root" aria-live="polite">
     <!-- Topbar -->
     <header class="topbar card" role="banner">
-      <div class="brand" id="brand">HYBRID MASTER 51</div>
-      <div class="top-controls" role="region" aria-label="Contrôles">
+      <div class="brand" id="brand" title="Hybrid Master 51">HYBRID MASTER 51</div>
+
+      <div class="top-controls" role="region" aria-label="Contrôles principaux">
         <div class="week-nav" aria-label="Sélection de la semaine">
           <button id="weekPrev" class="icon-btn" aria-label="Semaine précédente">‹</button>
           <input id="weekRange" type="range" min="0" max="26" value="0" aria-label="Choisir semaine (0 = aucune)" />
           <span id="weekLabel" class="week-label">Aucune semaine sélectionnée</span>
           <button id="weekNext" class="icon-btn" aria-label="Semaine suivante">›</button>
+        </div>
+
+        <div class="top-actions">
+          <button id="saveLocal" class="outline" title="Sauvegarder localement">💾 Sauvegarder</button>
+          <button id="syncDrive" class="outline" title="Sauvegarde Google Drive">☁️ Drive</button>
+          <button id="runSelftest" class="danger" title="Exécuter la suite de tests">🔎 Selftest</button>
         </div>
       </div>
     </header>
@@ -33,10 +39,11 @@
     <div class="layout-immersive">
       <!-- Left nav -->
       <nav class="left-nav card" aria-label="Navigation principale">
-        <button class="nav-btn" id="navSessions" aria-pressed="true">Séances</button>
-        <button class="nav-btn" id="navStats" aria-pressed="false">Statistiques</button>
-        <button class="nav-btn" id="navJournal" aria-pressed="false">Carnet</button>
-        <div class="left-footer">
+        <button class="nav-btn" id="navSessions" aria-pressed="true" title="Sessions (1)">📅</button>
+        <button class="nav-btn" id="navStats" aria-pressed="false" title="Statistiques (2)">📊</button>
+        <button class="nav-btn" id="navJournal" aria-pressed="false" title="Carnet (3)">📝</button>
+
+        <div class="left-footer" aria-hidden="false">
           <button id="exportJson" class="link-btn">Export JSON</button>
           <label for="importJson" class="link-btn">Import JSON</label>
           <input id="importJson" type="file" accept="application/json" style="display:none" />
@@ -60,14 +67,37 @@
           </header>
 
           <div class="session-body">
-            <!-- Exercises list goes here -->
+            <div class="session-top">
+              <div class="session-controls">
+                <label for="daySelect" class="muted">Jour</label>
+                <select id="daySelect" aria-label="Sélection du jour">
+                  <option value="dimanche">Dimanche</option>
+                  <option value="mardi">Mardi</option>
+                  <option value="vendredi">Vendredi</option>
+                </select>
+              </div>
+
+              <div class="timer-large" aria-hidden="false">
+                <svg id="globalTimerSvg" width="96" height="96" viewBox="0 0 96 96" aria-hidden="true">
+                  <circle cx="48" cy="48" r="44" stroke="rgba(255,255,255,0.06)" stroke-width="8" fill="none"/>
+                  <circle id="globalTimerProgress" cx="48" cy="48" r="44" stroke="var(--accent)" stroke-width="8" fill="none" stroke-linecap="round" stroke-dasharray="276.46" stroke-dashoffset="276.46" transform="rotate(-90 48 48)"></circle>
+                </svg>
+                <div class="timer-info">
+                  <div id="globalTimerDisplay" class="time">00:00</div>
+                  <div class="timer-buttons">
+                    <button id="globalTimerStart" class="icon-btn" aria-label="Démarrer le minuteur">▶</button>
+                    <button id="globalTimerPause" class="icon-btn" aria-label="Pause le minuteur">⏸</button>
+                    <button id="globalTimerReset" class="icon-btn" aria-label="Réinitialiser le minuteur">⟲</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Exercises list -->
             <div id="exerciseList" class="exercise-list" role="list"></div>
 
             <div class="session-actions">
               <button id="finishSession" class="primary">Terminer séance</button>
-              <button id="saveLocal" class="outline">Sauvegarder local</button>
-              <button id="syncDrive" class="outline" title="Sauvegarde vers Google Drive">Sauvegarde Drive</button>
-              <button id="runSelftest" class="danger">Lancer autotest</button>
             </div>
           </div>
         </section>
@@ -78,6 +108,11 @@
         <div class="chart-wrap">
           <h3>Volume hebdo (4 semaines)</h3>
           <canvas id="volumeChart" width="320" height="180" aria-label="Graphique volume hebdomadaire"></canvas>
+        </div>
+
+        <div class="chart-wrap">
+          <h3>RPE / Sommeil</h3>
+          <canvas id="rpeChart" width="320" height="140" aria-label="RPE et sommeil"></canvas>
         </div>
 
         <div class="mini-cards">
@@ -102,7 +137,7 @@
           <button id="exportCsv" class="outline">Exporter CSV</button>
           <button id="downloadPdf" class="outline">Exporter PDF (simulé)</button>
           <div id="driveInstructions" class="muted small">
-            Pour activer Google Drive : fournir un <code>GOOGLE_CLIENT_ID</code> dans <code>app.js</code> et autoriser les scopes.
+            Pour activer Google Drive : renseignez <code>GOOGLE_CLIENT_ID</code> dans <code>app.js</code>.
           </div>
         </div>
       </aside>
